@@ -1,22 +1,30 @@
-﻿using System.Threading.RateLimiting;
+﻿using System.Collections.Concurrent;
+using System.Threading.RateLimiting;
+using Microsoft.Extensions.Configuration;
+using SS14.GithubApiHelper.Configuration;
 
 namespace SS14.GithubApiHelper.Services;
 
 public sealed class RateLimiterService : IDisposable
 {
-    private readonly Dictionary<long, RateLimiter> _rateLimiters = new();
+    private readonly GithubConfiguration _configuration = new();
+
+    private readonly ConcurrentDictionary<long, RateLimiter> _rateLimiters = new();
     private readonly TokenBucketRateLimiterOptions _options;
 
-    public RateLimiterService()
+    public RateLimiterService(IConfiguration configuration)
     {
+        var config = configuration.GetSection(GithubConfiguration.Name).Get<GithubConfiguration>();
+        var limits = config?.RateLimit ?? new GithubConfiguration.RateLimitConfiguration();
+
         _options = new TokenBucketRateLimiterOptions
         {
             AutoReplenishment = true,
-            QueueLimit = 3,
+            QueueLimit = limits.QueueLimit,
             ReplenishmentPeriod = TimeSpan.FromMinutes(1),
-            TokenLimit = 3,
+            TokenLimit = limits.TokenLimit,
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-            TokensPerPeriod = 1
+            TokensPerPeriod = limits.TokensPerPeriod
         };
     }
 
@@ -25,7 +33,7 @@ public sealed class RateLimiterService : IDisposable
         if (!_rateLimiters.TryGetValue(id, out var limiter))
         {
             limiter = new TokenBucketRateLimiter(_options);
-            _rateLimiters.Add(id, limiter);
+            _rateLimiters.TryAdd(id, limiter);
         }
 
         var lease = await limiter.AcquireAsync();
@@ -45,7 +53,7 @@ public sealed class RateLimiterService : IDisposable
         foreach (var staleLimiterId in staleLimiters)
         {
             await _rateLimiters[staleLimiterId].DisposeAsync();
-            _rateLimiters.Remove(staleLimiterId);
+            _rateLimiters.Remove(staleLimiterId, out _);
         }
     }
 
