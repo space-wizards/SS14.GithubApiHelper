@@ -7,8 +7,6 @@ namespace SS14.GithubApiHelper.Services;
 
 public sealed class RateLimiterService : IDisposable
 {
-    private readonly GithubConfiguration _configuration = new();
-
     private readonly ConcurrentDictionary<long, RateLimiter> _rateLimiters = new();
     private readonly TokenBucketRateLimiterOptions _options;
 
